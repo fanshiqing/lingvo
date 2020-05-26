@@ -475,6 +475,7 @@ class Trainer(base_runner.BaseRunner):
         except tf.errors.FailedPreconditionError as e:
           tf.logging.info('Probably the expected race on global_step: %s', e)
           raise
+
         msg = 'step:%6d' % global_step
         self._SetStatusMessage(msg)
         if global_step < self._start_up_delay_steps:
@@ -528,6 +529,14 @@ class Trainer(base_runner.BaseRunner):
             model_task.eval_metrics,
             model_task.per_example_tensors,
         ])
+        from tensorflow.contrib.memory_stats.python.ops import memory_stats_ops
+        max_bytes_in_use_op = memory_stats_ops.MaxBytesInUse()
+        bytes_limit_op = memory_stats_ops.BytesLimit()
+        if global_step % 10 == 0:
+          max_bytes_in_use, bytes_limit = sess.run([max_bytes_in_use_op, bytes_limit_op])
+          tf.logging.info("############################################################")
+          tf.logging.info("max memory usage on GPU: %d/%d" % (max_bytes_in_use, bytes_limit))
+          tf.logging.info("############################################################")
         msg = 'step:%6d' % global_step
         for key, (val, _) in sorted(six.iteritems(eval_metrics)):
           msg += ' %s:%.8g' % (key, val)
