@@ -481,9 +481,12 @@ def SessionConfig(soft_placement=True, inline=True, cluster_def=None):
           optimizer_options=tf.OptimizerOptions(
               opt_level=tf.OptimizerOptions.L1, do_function_inlining=inline)),
       cluster_def=cluster_def)
+  session_config.gpu_options.allow_growth = True
   # Disable layout optimizer which increases GPU memory usage.
-  session_config.graph_options.rewrite_options.layout_optimizer = (
-      rewriter_config_pb2.RewriterConfig.OFF)
+  #session_config.graph_options.rewrite_options.layout_optimizer = (
+  #    rewriter_config_pb2.RewriterConfig.OFF)
+  print('QQ')
+  print(session_config)
   return session_config
 
 
