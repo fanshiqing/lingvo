@@ -341,27 +341,27 @@ class Controller(base_runner.BaseRunner):
           return
 
         # Checkpoint if it's time.
-        self.checkpointer.MaybeSave(sess, gsteps)
+#        self.checkpointer.MaybeSave(sess, gsteps)
 
         # Summary.
-        if self._summary_op is not None and global_step >= next_summary_step:
-          tf.logging.info('Write summary @%s', global_step)
-          summary_str = sess.run(self._summary_op)
-          if isinstance(summary_str, np.ndarray) and summary_str.size == 0:
-            tf.logging.info('Skipping summary: %s', summary_str)
-          else:
-            self._summary_writer.add_summary(summary_str, global_step)
-          self._SummarizeValue(global_step, 'total_num_params',
-                               self._total_num_params)
-          next_summary_step = global_step + summary_interval_steps
-          tf.logging.info('Write summary done: step %d', global_step)
-          self._SetStatusMessage(
-              'step:%6d, steps/sec: %0.2f, examples/sec: %0.2f' %
-              (global_step, step_rate, example_rate))
-          self._ExportMetrics(
-              global_step=global_step,
-              step_rate=step_rate,
-              example_rate=example_rate)
+        #if self._summary_op is not None and global_step >= next_summary_step:
+          #tf.logging.info('Write summary @%s', global_step)
+          #summary_str = sess.run(self._summary_op)
+          #if isinstance(summary_str, np.ndarray) and summary_str.size == 0:
+          #  tf.logging.info('Skipping summary: %s', summary_str)
+          #else:
+          #  self._summary_writer.add_summary(summary_str, global_step)
+          #self._SummarizeValue(global_step, 'total_num_params',
+          #                     self._total_num_params)
+          #next_summary_step = global_step + summary_interval_steps
+          #tf.logging.info('Write summary done: step %d', global_step)
+          #self._SetStatusMessage(
+          #    'step:%6d, steps/sec: %0.2f, examples/sec: %0.2f' %
+          #    (global_step, step_rate, example_rate))
+          #self._ExportMetrics(
+          #    global_step=global_step,
+          #    step_rate=step_rate,
+          #    example_rate=example_rate)
 
         now = time.time()
         if now < next_iteration_seconds:
@@ -491,6 +491,13 @@ class Trainer(base_runner.BaseRunner):
       status_interval_steps = 100
       next_status_step = 1
       eval_metrics = None
+      from tensorflow.contrib.memory_stats.python.ops import memory_stats_ops
+      from tensorflow.python.client import device_lib
+      #def get_available_gpus():
+      #   local_device_protos = device_lib.list_local_devices()
+      #   return [x.name for x in local_device_protos if x.device_type == 'GPU']
+      #last_device = get_available_gpus()[-1]
+      #print("Last gpu device name: %s" % last_device)
       while True:
         if (self._trial.ShouldStopAndMaybeReport(global_step, eval_metrics) or
             self._ShouldStop(sess, global_step)):
@@ -523,15 +530,46 @@ class Trainer(base_runner.BaseRunner):
             except AttributeError:
               pass
 
+        from tensorflow.core.protobuf import config_pb2
+        # Do tfprof at this step
+        profile_step = 10
+        #run_options = tf.RunOptions(trace_level=tf.RunOptions.NO_TRACE,  # No trace
+        trace_level = tf.RunOptions.FULL_TRACE if global_step == profile_step - 1 else tf.RunOptions.NO_TRACE
+        run_options = tf.RunOptions(trace_level=trace_level,
+            report_tensor_allocations_upon_oom=True)
+        run_metadata = tf.RunMetadata()
+
         _, global_step, eval_metrics, per_example_tensors = sess.run([
             model_task.train_op,
             py_utils.GetGlobalStep(),
             model_task.eval_metrics,
             model_task.per_example_tensors,
-        ])
-        from tensorflow.contrib.memory_stats.python.ops import memory_stats_ops
-        max_bytes_in_use_op = memory_stats_ops.MaxBytesInUse()
-        bytes_limit_op = memory_stats_ops.BytesLimit()
+        ], options=run_options,
+        run_metadata=run_metadata if global_step == profile_step - 1 else None)
+
+        from tensorflow.contrib.tfprof import model_analyzer
+        # param_stats = model_analyzer.print_model_analysis(
+        #     self._graph,
+        #     tfprof_options=model_analyzer.TRAINABLE_VARS_PARAMS_STAT_OPTIONS)
+        # # param_stats is tensorflow.tfprof.TFGraphNodeProto proto.
+        # # Let's print the root below.
+        # tf.logging.info("total params: %d" % param_stats.total_parameters)
+        # Profile memory and dump results to file
+        if global_step == profile_step:
+          opts = model_analyzer.PRINT_ALL_TIMING_MEMORY.copy()
+          opts['order_by'] = 'bytes'
+          opts['dump_to_file'] = 'tfprofout_time.txt'
+          opts['max_depth'] = 20
+          model_analyzer.print_model_analysis(
+              self._graph,
+              run_meta=run_metadata,
+              tfprof_options=opts)
+
+        # Noted by shiqing: Kindly modify this device the one of the last stage
+        # where the peak memory is always the highest (as of the softmax layer) 
+        with tf.device('/device:GPU:7'):
+          max_bytes_in_use_op = memory_stats_ops.MaxBytesInUse()
+          bytes_limit_op = memory_stats_ops.BytesLimit()
         if global_step % 10 == 0:
           max_bytes_in_use, bytes_limit = sess.run([max_bytes_in_use_op, bytes_limit_op])
           tf.logging.info("############################################################")
