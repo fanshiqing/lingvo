@@ -187,12 +187,12 @@ class OneBWdsGPipeTransformerWPM(WordLevelOneBwdsBase):
   MAX_TOKENS = 1024  # The max sequence length in one example.
 
   # GPIPE related params.
-  GPUS = 4
+  GPUS = 8
   # A list of ending index for each split/partition in ascending order.
   # For example SPLITS = [8, 16, 24, 32] defined a 32 layer model with 4 splits,
   # each of which contains 8 layers.
   # The number belows runs on 16GB-V100s. Your mileage may vary.
-  SPLITS = [8 * (i + 1) for i in range(GPUS)]
+  SPLITS = [1 * (i + 1) for i in range(GPUS)]
   LAYERS = SPLITS[-1]
   # Set NUM_MICRO_BATCHES >= len(SPLITS) * 4 to minimize gpipe bubble.
   NUM_MICRO_BATCHES = 32
@@ -249,7 +249,9 @@ class OneBWdsGPipeTransformerWPM(WordLevelOneBwdsBase):
 
     p.train.Set(
         learning_rate=0.5,
-        optimizer=optimizer.Adam.ParamsA(),
+        # optimizer=optimizer.Adam.ParamsA(),
+        optimizer=optimizer.RMSProp.Params(),
+        # optimizer=optimizer.SGD.Params(),
         clip_gradient_norm_to_value=0.0,
         grad_norm_to_clip_to_zero=0.0,
         lr_schedule=schedule.TransformerLearningRateSchedule.Params().Set(
